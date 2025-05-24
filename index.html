@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SpreadTheWord</title>
+    <!-- Awesomplete CSS and JS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.js"></script>
     <!-- Firebase SDK -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
-        import { getDatabase, ref, push, get, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-database.js";
+        import { getDatabase, ref, push, get } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAjBbnm8F76BCb9C5fluUyoZ2QnMSXlHOo",
@@ -35,6 +38,9 @@
             const pdfSortSelect = document.getElementById('pdf-sort');
             const submitButton = document.querySelector('button[type="submit"]');
             const notificationContainer = document.getElementById('notification-container');
+
+            // Set initial language attribute for spell-checking
+            wordInput.setAttribute('lang', 'en');
 
             const translations = {
                 English: {
@@ -107,61 +113,44 @@
 
             let currentLanguage = 'English';
 
-            // Create a notification function
             function showNotification(message, isError = false) {
                 const notification = document.createElement('div');
                 notification.className = `notification ${isError ? 'error' : 'success'}`;
                 notification.textContent = message;
                 notificationContainer.appendChild(notification);
-                
-                // Make notification visible with animation
-                setTimeout(() => {
-                    notification.classList.add('visible');
-                }, 10);
-                
-                // Remove notification after delay
+                setTimeout(() => notification.classList.add('visible'), 10);
                 setTimeout(() => {
                     notification.classList.remove('visible');
-                    setTimeout(() => {
-                        notification.remove();
-                    }, 300);
+                    setTimeout(() => notification.remove(), 300);
                 }, 2000);
             }
 
             function updateLanguageElements(language) {
                 const langData = translations[language];
-
-                // Update labels for word submission
                 document.querySelector('label[for="word"]').textContent = langData.wordLabel;
                 wordInput.placeholder = langData.wordPlaceholder;
                 document.querySelector('label[for="category"]').textContent = langData.categoryLabel;
 
-                // Update categories for word submission
-                // Keep the current selection if it exists
                 const currentCategory = categorySelect.value;
                 categorySelect.innerHTML = langData.categories
                     .map(cat => `<option value="${cat.value}" ${(cat.disabled || (currentCategory === '' && cat.value === '')) ? 'disabled' : ''} ${currentCategory === cat.value ? 'selected' : (cat.value === '' && currentCategory === '' ? 'selected' : '')}>${cat.text}</option>`)
                     .join('');
 
-                // Update PDF form labels
                 document.querySelector('label[for="pdf-language"]').textContent = langData.pdfLanguageLabel;
                 document.querySelector('label[for="pdf-category"]').textContent = langData.pdfCategoryLabel;
                 document.querySelector('label[for="pdf-sort"]').textContent = langData.pdfSortLabel;
-                
-                // Update PDF categories dropdown
+
                 const currentPdfCategory = pdfCategorySelect.value;
                 pdfCategorySelect.innerHTML = langData.categories
                     .filter(cat => !cat.disabled)
                     .map(cat => `<option value="${cat.value}" ${currentPdfCategory === cat.value ? 'selected' : ''}>${cat.text}</option>`)
                     .join('');
 
-                // Update PDF sort options dropdown
                 const currentSortOption = pdfSortSelect.value;
                 pdfSortSelect.innerHTML = langData.sortOptions
                     .map(sort => `<option value="${sort.value}" ${currentSortOption === sort.value ? 'selected' : ''}>${sort.text}</option>`)
                     .join('');
-                
-                // Update button texts
+
                 submitButton.textContent = langData.submitButton;
                 document.querySelector('#pdf-form button').textContent = langData.pdfButton;
             }
@@ -170,16 +159,17 @@
                 currentLanguage = currentLanguage === 'English' ? 'French' : 'English';
                 document.body.className = currentLanguage.toLowerCase();
                 updateLanguageElements(currentLanguage);
+                wordInput.setAttribute('lang', currentLanguage === 'English' ? 'en' : 'fr');
+                updateSuggestions();
             });
 
-            // Function to check if word already exists
             function checkWordExists(word, category, language) {
                 return get(ref(database, `words/${language}`))
                     .then((snapshot) => {
                         if (snapshot.exists()) {
                             const data = snapshot.val();
-                            return Object.values(data).some(entry => 
-                                entry.word.toLowerCase() === word.toLowerCase() && 
+                            return Object.values(data).some(entry =>
+                                entry.word.toLowerCase() === word.toLowerCase() &&
                                 entry.category === category
                             );
                         }
@@ -198,15 +188,12 @@
                     return;
                 }
 
-                // Check if word already exists
                 checkWordExists(word, category, currentLanguage)
                     .then((exists) => {
                         if (exists) {
                             showNotification(langData.duplicateMessage, true);
                             return;
                         }
-
-                        // Word doesn't exist, proceed with saving
                         return push(ref(database, `words/${currentLanguage}/`), {
                             word,
                             category,
@@ -214,11 +201,11 @@
                         });
                     })
                     .then((result) => {
-                        if (result) { // Only show success if we actually saved something
+                        if (result) {
                             showNotification(langData.successMessage);
-                            // Only clear the word input, keep the category
                             wordInput.value = '';
-                            wordInput.focus(); // Focus on word input for faster input
+                            wordInput.focus();
+                            updateSuggestions(); // Refresh suggestions after submission
                         }
                     })
                     .catch((error) => {
@@ -234,14 +221,11 @@
                 const selectedSort = pdfSortSelect.value;
                 const langData = translations[currentLanguage];
 
-                // Get all words for the selected language and category
                 get(ref(database, `words/${selectedLanguage}`))
                     .then((snapshot) => {
                         if (snapshot.exists()) {
                             const data = snapshot.val();
                             let words = [];
-
-                            // Filter by category and convert to array
                             Object.keys(data).forEach(key => {
                                 const entry = data[key];
                                 if (entry.category === selectedCategory) {
@@ -253,13 +237,9 @@
                             });
 
                             if (words.length > 0) {
-                                // Sort words based on selected option
                                 if (selectedSort === 'alphabetical') {
                                     words.sort((a, b) => a.word.localeCompare(b.word));
                                 }
-                                // For chronological, keep the original database order (no sorting)
-                                
-                                // Generate PDF with jsPDF
                                 generatePDF(words, selectedLanguage, selectedCategory, langData);
                             } else {
                                 showNotification(langData.noDatasFound, true);
@@ -278,20 +258,13 @@
                 try {
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF();
-                    
-                    // Add title
                     const title = `${langData.downloadTitle} - ${language} - ${category}`;
                     doc.setFontSize(16);
                     doc.text(title, 14, 20);
-                    
-                    // Add date
                     doc.setFontSize(10);
                     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
-                    
-                    // Create table with words
                     const tableColumn = ["Word", "Date Added"];
                     const tableRows = words.map(word => [word.word, word.timestamp]);
-                    
                     doc.autoTable({
                         head: [tableColumn],
                         body: tableRows,
@@ -299,11 +272,8 @@
                         styles: { fontSize: 12 },
                         headStyles: { fillColor: [41, 128, 185] }
                     });
-                    
-                    // Save PDF
                     const filename = `${language}_${category}_words.pdf`;
                     doc.save(filename);
-                    
                     showNotification(langData.pdfGenerated);
                 } catch (error) {
                     console.error("Error generating PDF: ", error);
@@ -311,11 +281,53 @@
                 }
             }
 
-            // Initial language setup
+            // Initialize Awesomplete for autocompletion
+            const awesomplete = new Awesomplete(wordInput, {
+                minChars: 1,
+                maxItems: 10,
+                autoFirst: true
+            });
+
+            // Function to update autocompletion suggestions
+            function updateSuggestions() {
+                const language = currentLanguage;
+                const category = categorySelect.value;
+                if (category === 'Phrasal' || category === 'Idiom') {
+                    get(ref(database, `words/${language}`))
+                        .then((snapshot) => {
+                            if (snapshot.exists()) {
+                                const data = snapshot.val();
+                                const words = Object.values(data)
+                                    .filter(entry => entry.category === category)
+                                    .map(entry => entry.word);
+                                awesomplete.list = words;
+                            } else {
+                                awesomplete.list = [];
+                            }
+                        })
+                        .catch((error) => {
+                            console.error("Error fetching suggestions: ", error);
+                        });
+                } else {
+                    awesomplete.list = [];
+                }
+            }
+
+            // Event listeners for updating suggestions
+            categorySelect.addEventListener('change', updateSuggestions);
+            toggleSwitch.addEventListener('click', () => {
+                currentLanguage = currentLanguage === 'English' ? 'French' : 'English';
+                document.body.className = currentLanguage.toLowerCase();
+                updateLanguageElements(currentLanguage);
+                wordInput.setAttribute('lang', currentLanguage === 'English' ? 'en' : 'fr');
+                updateSuggestions();
+            });
+
+            // Initial setup
             updateLanguageElements(currentLanguage);
+            updateSuggestions();
         });
     </script>
-    <!-- Improved CSS -->
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -422,7 +434,6 @@
             border-radius: 5px;
         }
 
-        /* Notification styling */
         #notification-container {
             position: fixed;
             top: 20px;
@@ -510,7 +521,7 @@
         <div class="form-section">
             <form id="word-form">
                 <label for="word">Enter a Word:</label>
-                <input type="text" id="word" placeholder="e.g., Beautiful / Beau" required>
+                <input type="text" id="word" placeholder="e.g., Beautiful / Beau" required spellcheck="true">
                 <label for="category">Select Category:</label>
                 <select id="category" required>
                     <option value="" disabled selected>Choose a category</option>
@@ -558,7 +569,6 @@
             </form>
         </div>
     </div>
-    <!-- Notification container -->
     <div id="notification-container"></div>
 </body>
 </html>
