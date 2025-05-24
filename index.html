@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SpreadTheWord</title>
+    <!-- Firebase SDK -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.0/jspdf.plugin.autotable.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
+        import { getDatabase, ref, push, get, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAjBbnm8F76BCb9C5fluUyoZ2QnMSXlHOo",
+            authDomain: "test-c7bf3.firebaseapp.com",
+            databaseURL: "https://test-c7bf3-default-rtdb.firebaseio.com",
+            projectId: "test-c7bf3",
+            storageBucket: "test-c7bf3.firebasestorage.app",
+            messagingSenderId: "573697013702",
+            appId: "1:573697013702:web:fe132fc4d796c06bdbe4c7"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('word-form');
+            const pdfForm = document.getElementById('pdf-form');
+            const toggleSwitch = document.getElementById('toggle-switch');
+            const wordInput = document.getElementById('word');
+            const categorySelect = document.getElementById('category');
+            const pdfCategorySelect = document.getElementById('pdf-category');
+            const pdfLanguageSelect = document.getElementById('pdf-language');
+            const pdfSortSelect = document.getElementById('pdf-sort');
+            const submitButton = document.querySelector('button[type="submit"]');
+            const notificationContainer = document.getElementById('notification-container');
+
+            const translations = {
+                English: {
+                    wordLabel: 'Enter a Word:',
+                    wordPlaceholder: 'e.g., Beautiful / Beau',
+                    categoryLabel: 'Select Category:',
+                    submitButton: 'Submit',
+                    emptyFieldMessage: 'Please fill in all fields before submission!',
+                    successMessage: 'Word submitted successfully! ✅',
+                    errorMessage: 'Failed to submit the word ❌',
+                    duplicateMessage: 'This word already exists in this category! ❌',
+                    pdfLanguageLabel: 'Select Language:',
+                    pdfCategoryLabel: 'Select Category:',
+                    pdfSortLabel: 'Sort Order:',
+                    pdfButton: 'Generate PDF',
+                    downloadTitle: 'Word List',
+                    noDatasFound: 'No words found for the selected criteria.',
+                    pdfGenerated: 'PDF generated successfully! ✅',
+                    pdfGenerationError: 'Failed to generate PDF ❌',
+                    sortOptions: [
+                        {value: 'alphabetical', text: 'Alphabetical'},
+                        {value: 'chronological', text: 'Chronological (Date Added)'}
+                    ],
+                    categories: [
+                        {value: '', text: 'Choose a category', disabled: true},
+                        {value: 'Synonym', text: 'Synonym'},
+                        {value: 'Phrasal', text: 'Phrasal'},
+                        {value: 'Idiom', text: 'Idiom'},
+                        {value: 'Compound', text: 'Compound'},
+                        {value: 'Pronunciation', text: 'Pronunciation'},
+                        {value: 'Conjunction', text: 'Conjunction'},
+                        {value: 'Collocations', text: 'Collocations'},
+                        {value: 'Grammar', text: 'Grammar'}
+                    ]
+                },
+                French: {
+                    wordLabel: 'Entrez un Mot:',
+                    wordPlaceholder: 'ex., Magnifique / Beau',
+                    categoryLabel: 'Choisir une Catégorie:',
+                    submitButton: 'Soumettre',
+                    emptyFieldMessage: 'Veuillez remplir tous les champs avant de soumettre!',
+                    successMessage: 'Mot soumis avec succès! ✅',
+                    errorMessage: 'Échec de la soumission du mot ❌',
+                    duplicateMessage: 'Ce mot existe déjà dans cette catégorie! ❌',
+                    pdfLanguageLabel: 'Sélectionner la langue:',
+                    pdfCategoryLabel: 'Sélectionner la catégorie:',
+                    pdfSortLabel: 'Ordre de tri:',
+                    pdfButton: 'Générer PDF',
+                    downloadTitle: 'Liste de mots',
+                    noDatasFound: 'Aucun mot trouvé pour les critères sélectionnés.',
+                    pdfGenerated: 'PDF généré avec succès! ✅',
+                    pdfGenerationError: 'Échec de la génération du PDF ❌',
+                    sortOptions: [
+                        {value: 'alphabetical', text: 'Alphabétique'},
+                        {value: 'chronological', text: 'Chronologique (Date d\'ajout)'}
+                    ],
+                    categories: [
+                        {value: '', text: 'Choisissez une catégorie', disabled: true},
+                        {value: 'Synonym', text: 'Synonyme'},
+                        {value: 'Phrasal', text: 'Expression'},
+                        {value: 'Idiom', text: 'Idiome'},
+                        {value: 'Compound', text: 'Mot composé'},
+                        {value: 'Pronunciation', text: 'Prononciation'},
+                        {value: 'Conjunction', text: 'Conjonction'},
+                        {value: 'Collocations', text: 'Collocations'},
+                        {value: 'Grammar', text: 'Grammaire'}
+                    ]
+                }
+            };
+
+            let currentLanguage = 'English';
+
+            // Create a notification function
+            function showNotification(message, isError = false) {
+                const notification = document.createElement('div');
+                notification.className = `notification ${isError ? 'error' : 'success'}`;
+                notification.textContent = message;
+                notificationContainer.appendChild(notification);
+                
+                // Make notification visible with animation
+                setTimeout(() => {
+                    notification.classList.add('visible');
+                }, 10);
+                
+                // Remove notification after delay
+                setTimeout(() => {
+                    notification.classList.remove('visible');
+                    setTimeout(() => {
+                        notification.remove();
+                    }, 300);
+                }, 2000);
+            }
+
+            function updateLanguageElements(language) {
+                const langData = translations[language];
+
+                // Update labels for word submission
+                document.querySelector('label[for="word"]').textContent = langData.wordLabel;
+                wordInput.placeholder = langData.wordPlaceholder;
+                document.querySelector('label[for="category"]').textContent = langData.categoryLabel;
+
+                // Update categories for word submission
+                // Keep the current selection if it exists
+                const currentCategory = categorySelect.value;
+                categorySelect.innerHTML = langData.categories
+                    .map(cat => `<option value="${cat.value}" ${(cat.disabled || (currentCategory === '' && cat.value === '')) ? 'disabled' : ''} ${currentCategory === cat.value ? 'selected' : (cat.value === '' && currentCategory === '' ? 'selected' : '')}>${cat.text}</option>`)
+                    .join('');
+
+                // Update PDF form labels
+                document.querySelector('label[for="pdf-language"]').textContent = langData.pdfLanguageLabel;
+                document.querySelector('label[for="pdf-category"]').textContent = langData.pdfCategoryLabel;
+                document.querySelector('label[for="pdf-sort"]').textContent = langData.pdfSortLabel;
+                
+                // Update PDF categories dropdown
+                const currentPdfCategory = pdfCategorySelect.value;
+                pdfCategorySelect.innerHTML = langData.categories
+                    .filter(cat => !cat.disabled)
+                    .map(cat => `<option value="${cat.value}" ${currentPdfCategory === cat.value ? 'selected' : ''}>${cat.text}</option>`)
+                    .join('');
+
+                // Update PDF sort options dropdown
+                const currentSortOption = pdfSortSelect.value;
+                pdfSortSelect.innerHTML = langData.sortOptions
+                    .map(sort => `<option value="${sort.value}" ${currentSortOption === sort.value ? 'selected' : ''}>${sort.text}</option>`)
+                    .join('');
+                
+                // Update button texts
+                submitButton.textContent = langData.submitButton;
+                document.querySelector('#pdf-form button').textContent = langData.pdfButton;
+            }
+
+            toggleSwitch.addEventListener('click', () => {
+                currentLanguage = currentLanguage === 'English' ? 'French' : 'English';
+                document.body.className = currentLanguage.toLowerCase();
+                updateLanguageElements(currentLanguage);
+            });
+
+            // Function to check if word already exists
+            function checkWordExists(word, category, language) {
+                return get(ref(database, `words/${language}`))
+                    .then((snapshot) => {
+                        if (snapshot.exists()) {
+                            const data = snapshot.val();
+                            return Object.values(data).some(entry => 
+                                entry.word.toLowerCase() === word.toLowerCase() && 
+                                entry.category === category
+                            );
+                        }
+                        return false;
+                    });
+            }
+
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const word = wordInput.value.trim();
+                const category = categorySelect.value;
+                const langData = translations[currentLanguage];
+
+                if (!word || !category) {
+                    showNotification(langData.emptyFieldMessage, true);
+                    return;
+                }
+
+                // Check if word already exists
+                checkWordExists(word, category, currentLanguage)
+                    .then((exists) => {
+                        if (exists) {
+                            showNotification(langData.duplicateMessage, true);
+                            return;
+                        }
+
+                        // Word doesn't exist, proceed with saving
+                        return push(ref(database, `words/${currentLanguage}/`), {
+                            word,
+                            category,
+                            timestamp: Date.now()
+                        });
+                    })
+                    .then((result) => {
+                        if (result) { // Only show success if we actually saved something
+                            showNotification(langData.successMessage);
+                            // Only clear the word input, keep the category
+                            wordInput.value = '';
+                            wordInput.focus(); // Focus on word input for faster input
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error saving word: ", error);
+                        showNotification(langData.errorMessage, true);
+                    });
+            });
+
+            pdfForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const selectedLanguage = pdfLanguageSelect.value;
+                const selectedCategory = pdfCategorySelect.value;
+                const selectedSort = pdfSortSelect.value;
+                const langData = translations[currentLanguage];
+
+                // Get all words for the selected language and category
+                get(ref(database, `words/${selectedLanguage}`))
+                    .then((snapshot) => {
+                        if (snapshot.exists()) {
+                            const data = snapshot.val();
+                            let words = [];
+
+                            // Filter by category and convert to array
+                            Object.keys(data).forEach(key => {
+                                const entry = data[key];
+                                if (entry.category === selectedCategory) {
+                                    words.push({
+                                        word: entry.word,
+                                        timestamp: new Date(entry.timestamp).toLocaleDateString()
+                                    });
+                                }
+                            });
+
+                            if (words.length > 0) {
+                                // Sort words based on selected option
+                                if (selectedSort === 'alphabetical') {
+                                    words.sort((a, b) => a.word.localeCompare(b.word));
+                                }
+                                // For chronological, keep the original database order (no sorting)
+                                
+                                // Generate PDF with jsPDF
+                                generatePDF(words, selectedLanguage, selectedCategory, langData);
+                            } else {
+                                showNotification(langData.noDatasFound, true);
+                            }
+                        } else {
+                            showNotification(langData.noDatasFound, true);
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("Error fetching words: ", error);
+                        showNotification(langData.pdfGenerationError, true);
+                    });
+            });
+
+            function generatePDF(words, language, category, langData) {
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    
+                    // Add title
+                    const title = `${langData.downloadTitle} - ${language} - ${category}`;
+                    doc.setFontSize(16);
+                    doc.text(title, 14, 20);
+                    
+                    // Add date
+                    doc.setFontSize(10);
+                    doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 30);
+                    
+                    // Create table with words
+                    const tableColumn = ["Word", "Date Added"];
+                    const tableRows = words.map(word => [word.word, word.timestamp]);
+                    
+                    doc.autoTable({
+                        head: [tableColumn],
+                        body: tableRows,
+                        startY: 35,
+                        styles: { fontSize: 12 },
+                        headStyles: { fillColor: [41, 128, 185] }
+                    });
+                    
+                    // Save PDF
+                    const filename = `${language}_${category}_words.pdf`;
+                    doc.save(filename);
+                    
+                    showNotification(langData.pdfGenerated);
+                } catch (error) {
+                    console.error("Error generating PDF: ", error);
+                    showNotification(langData.pdfGenerationError, true);
+                }
+            }
+
+            // Initial language setup
+            updateLanguageElements(currentLanguage);
+        });
+    </script>
+    <!-- Improved CSS -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #ffe6e6;
+            color: #990000;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            background: #fff;
+            max-width: 100%;
+            width: 90%;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            margin: 0 0 20px;
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            margin: 25px 0 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input, select, button {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        button {
+            background: #007BFF;
+            color: white;
+            cursor: pointer;
+            border: none;
+            font-size: 1rem;
+            transition: background 0.3s ease;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .form-section {
+            margin-bottom: 20px;
+        }
+
+        .toggle-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #ddd;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .toggle-switch:before {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 22px;
+            height: 22px;
+            background: url('https://upload.wikimedia.org/wikipedia/en/c/c3/Flag_of_France.svg') no-repeat center/cover;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        body.french .toggle-switch:before {
+            transform: translateX(30px);
+            background: url('https://upload.wikimedia.org/wikipedia/en/a/a4/Flag_of_the_United_States.svg') no-repeat center/cover;
+        }
+
+        #pdf-form {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        /* Notification styling */
+        #notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .notification {
+            padding: 12px 20px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            opacity: 0;
+            transform: translateX(50px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .notification.success {
+            background-color: #4CAF50;
+        }
+
+        .notification.error {
+            background-color: #f44336;
+        }
+
+        .notification.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        @media (max-width: 600px) {
+            body {
+                background-color: #e6e6ff;
+                color: #000099;
+            }
+
+            .container {
+                padding: 10px;
+            }
+
+            h1 {
+                margin: 0 0 10px;
+            }
+
+            input, select, button {
+                width: 100%;
+                padding: 8px;
+                margin-bottom: 10px;
+                font-size: 0.9rem;
+            }
+
+            .toggle-switch {
+                width: 50px;
+                height: 25px;
+            }
+
+            .toggle-switch:before {
+                width: 20px;
+                height: 20px;
+                top: 3px;
+                left: 3px;
+            }
+
+            #notification-container {
+                top: 10px;
+                right: 10px;
+            }
+
+            .notification {
+                padding: 8px 16px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body class="english">
+    <div class="container">
+        <h1>SpreadTheWord</h1>
+        <div class="toggle-container">
+            <div id="toggle-switch" class="toggle-switch"></div>
+        </div>
+        
+        <div class="form-section">
+            <form id="word-form">
+                <label for="word">Enter a Word:</label>
+                <input type="text" id="word" placeholder="e.g., Beautiful / Beau" required>
+                <label for="category">Select Category:</label>
+                <select id="category" required>
+                    <option value="" disabled selected>Choose a category</option>
+                    <option value="Synonym">Synonym</option>
+                    <option value="Phrasal">Phrasal</option>
+                    <option value="Idiom">Idiom</option>
+                    <option value="Compound">Compound</option>
+                    <option value="Pronunciation">Pronunciation</option>
+                    <option value="Conjunction">Conjunction</option>
+                    <option value="Collocations">Collocations</option>
+                    <option value="Grammar">Grammar</option>
+                </select>
+                <button type="submit">Submit</button>
+            </form>
+        </div>
+        
+        <h2>Download Word List</h2>
+        <div class="form-section">
+            <form id="pdf-form">
+                <label for="pdf-language">Select Language:</label>
+                <select id="pdf-language" required>
+                    <option value="English">English</option>
+                    <option value="French">French</option>
+                </select>
+                
+                <label for="pdf-category">Select Category:</label>
+                <select id="pdf-category" required>
+                    <option value="Synonym">Synonym</option>
+                    <option value="Phrasal">Phrasal</option>
+                    <option value="Idiom">Idiom</option>
+                    <option value="Compound">Compound</option>
+                    <option value="Pronunciation">Pronunciation</option>
+                    <option value="Conjunction">Conjunction</option>
+                    <option value="Collocations">Collocations</option>
+                    <option value="Grammar">Grammar</option>
+                </select>
+                
+                <label for="pdf-sort">Sort Order:</label>
+                <select id="pdf-sort" required>
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="chronological">Chronological (Date Added)</option>
+                </select>
+                
+                <button type="submit">Generate PDF</button>
+            </form>
+        </div>
+    </div>
+    <!-- Notification container -->
+    <div id="notification-container"></div>
+</body>
+</html>
